@@ -1,89 +1,123 @@
 import streamlit as st
-from groq import Groq
-from jinja2 import Template
-import subprocess
-import uuid
+import requests
+import base64
+from io import BytesIO
+from pylatex import Document, NoEscape
 
-st.title("AI Resume Generator (Groq + LaTeX + Streamlit)")
+# ---------------------------
+# CONFIG
+# ---------------------------
+st.set_page_config(page_title="AI Resume Generator", layout="wide")
 
-# Groq client
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  # Add this in Streamlit Secrets
+MODEL_NAME = "llama3-8b-instant"  # or "mixtral-8x7b"
 
-# User inputs
-name = st.text_input("Full Name")
-email = st.text_input("Email")
-phone = st.text_input("Phone")
-linkedin = st.text_input("LinkedIn URL")
+# ---------------------------
+# FUNCTIONS
+# ---------------------------
 
-summary_raw = st.text_area("Summary (raw text)")
-experience_raw = st.text_area("Experience (raw text)")
-education_raw = st.text_area("Education (raw text)")
-projects_raw = st.text_area("Projects (raw text)")
-skills_raw = st.text_area("Skills (raw text)")
+def call_groq(prompt):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    data = {
+        "model": MODEL_NAME,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2
+    }
+    response = requests.post(url, json=data, headers=headers)
+    return response.json()["choices"][0]["message"]["content"]
 
-# AI function
-def format_with_ai(section_text):
-    if not section_text.strip():
-        return ""
 
+def generate_latex(summary, education, experience, skills, projects):
     prompt = f"""
-    You are a CV LaTeX formatter.
-    Convert the following raw text into clean LaTeX:
+You are a world-class CV writer. Convert the following information into a clean,
+professional **LaTeX resume** with perfect formatting.
 
-    {section_text}
+Sections required:
+- Summary
+- Education
+- Experience
+- Skills
+- Projects
 
-    Output only LaTeX code. No explanation.
+Return ONLY LaTeX code. No explanation.
+
+Summary:
+{summary}
+
+Education:
+{education}
+
+Experience:
+{experience}
+
+Skills:
+{skills}
+
+Projects:
+{projects}
     """
 
-    response = client.chat.completions.create(
-        model="llama3-8b-8192",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-    )
+    latex_code = call_groq(prompt)
+    return latex_code
 
-    return response.choices[0].message.content
 
-# Generate PDF
-if st.button("Generate CV"):
-    with st.spinner("Generating LaTeX using Groq..."):
-        summary = format_with_ai(summary_raw)
-        experience = format_with_ai(experience_raw)
-        education = format_with_ai(education_raw)
-        projects = format_with_ai(projects_raw)
-        skills = format_with_ai(skills_raw)
+def latex_to_pdf(latex_code):
+    # create PDF using pylatex
+    doc = Document()
+    doc.append(NoEscape(latex_code))
+    pdf = doc.generate_pdf(compiler="pdflatex", clean_tex=False)
+    return pdf
 
-    with open("template.tex") as f:
-        template = Template(f.read())
 
-    full_tex = template.render(
-        NAME=name,
-        EMAIL=email,
-        PHONE=phone,
-        LINKEDIN=linkedin,
-        SUMMARY=summary,
-        EXPERIENCE=experience,
-        EDUCATION=education,
-        PROJECTS=projects,
-        SKILLS=skills,
-    )
+def display_pdf(pdf_bytes):
+    base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800"></iframe>'
+    st.markdown(pdf_display, unsafe_allow_html=True)
 
-    # Save temp tex file
-    tex_filename = f"cv_{uuid.uuid4()}.tex"
-    with open(tex_filename, "w") as f:
-        f.write(full_tex)
 
-    # Compile LaTeX → PDF using Tectonic
-    subprocess.run(["tectonic", tex_filename])
+# ---------------------------
+# STREAMLIT UI
+# ---------------------------
 
-    pdf_filename = tex_filename.replace(".tex", ".pdf")
+st.title("⚡ AI Resume Generator (Streamlit + Groq)")
 
-    # Provide download option
-    with open(pdf_filename, "rb") as f:
-        st.download_button(
-            "Download CV PDF",
-            f,
-            file_name="Resume.pdf",
-            mime="application/pdf",
-        )
+left, right = st.columns([0.45, 0.55])
 
-    st.success("CV generated successfully!")
+with left:
+    st.subheader("✍️ Fill Your Details")
+
+    summary = st.text_area("Summary", height=120)
+    education = st.text_area("Education", height=120)
+    experience = st.text_area("Experience", height=150)
+    skills = st.text_area("Skills", height=120)
+    projects = st.text_area("Projects", height=150)
+
+    generate_btn = st.button("🚀 Generate AI Resume")
+
+with right:
+    st.subheader("📄 Live CV Preview")
+
+    if generate_btn:
+        with st.spinner("Generating AI LaTeX Resume..."):
+            latex_code = generate_latex(summary, education, experience, skills, projects)
+
+            # generate pdf
+            pdf_bytes = latex_to_pdf(latex_code)
+
+            st.success("Resume Generated Successfully!")
+
+            # show PDF
+            display_pdf(pdf_bytes)
+
+            # download
+            st.download_button(
+                label="⬇ Download Resume (PDF)",
+                data=pdf_bytes,
+                file_name="resume.pdf",
+                mime="application/pdf"
+            )
+
+            # show LaTeX code for advanced users
+            with st.expander("View LaTeX Code"):
+                st.code(latex_code, language="latex")
