@@ -1,123 +1,119 @@
 import streamlit as st
 import requests
-import base64
-from io import BytesIO
-from pylatex import Document, NoEscape
+import json
+from pylatex import Document, Section, Command
+from pylatex.utils import NoEscape
 
-# ---------------------------
-# CONFIG
-# ---------------------------
-st.set_page_config(page_title="AI Resume Generator", layout="wide")
-
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  # Add this in Streamlit Secrets
-MODEL_NAME = "llama3-8b-instant"  # or "mixtral-8x7b"
-
-# ---------------------------
-# FUNCTIONS
-# ---------------------------
-
+# -----------------------
+# GROQ API CALL FUNCTION
+# -----------------------
 def call_groq(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {st.secrets['GROQ_API_KEY']}"
+    }
+
     data = {
-        "model": MODEL_NAME,
-        "messages": [{"role": "user", "content": prompt}],
+        "model": "llama3-8b-8192",
+        "messages": [
+            {"role": "system", "content": "You are a LaTeX resume generator. Output ONLY LaTeX code."},
+            {"role": "user", "content": prompt}
+        ],
         "temperature": 0.2
     }
+
     response = requests.post(url, json=data, headers=headers)
-    return response.json()["choices"][0]["message"]["content"]
+
+    # ------------ ERROR HANDLING -------------
+    try:
+        res_json = response.json()
+    except:
+        return "ERROR: Groq returned non-JSON response."
+
+    if "error" in res_json:
+        return f"ERROR FROM GROQ: {res_json['error']['message']}"
+
+    if "choices" not in res_json:
+        return "ERROR: Groq did not return 'choices'."
+
+    return res_json["choices"][0]["message"]["content"]
 
 
+# ---------------------------
+# Generate LaTeX using AI
+# ---------------------------
 def generate_latex(summary, education, experience, skills, projects):
     prompt = f"""
-You are a world-class CV writer. Convert the following information into a clean,
-professional **LaTeX resume** with perfect formatting.
+Create a clean LaTeX resume. Include the following sections:
 
-Sections required:
-- Summary
-- Education
-- Experience
-- Skills
-- Projects
-
-Return ONLY LaTeX code. No explanation.
-
-Summary:
+SUMMARY:
 {summary}
 
-Education:
+EDUCATION:
 {education}
 
-Experience:
+EXPERIENCE:
 {experience}
 
-Skills:
+SKILLS:
 {skills}
 
-Projects:
+PROJECTS:
 {projects}
-    """
+
+Use modern professional LaTeX formatting.
+OUTPUT ONLY LATEX CODE. NO EXPLANATION.
+"""
 
     latex_code = call_groq(prompt)
     return latex_code
 
 
+# ---------------------------
+# Convert LaTeX → PDF
+# ---------------------------
 def latex_to_pdf(latex_code):
-    # create PDF using pylatex
-    doc = Document()
-    doc.append(NoEscape(latex_code))
-    pdf = doc.generate_pdf(compiler="pdflatex", clean_tex=False)
-    return pdf
-
-
-def display_pdf(pdf_bytes):
-    base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    try:
+        doc = Document()
+        doc.append(NoEscape(latex_code))
+        return doc.dumps().encode("utf-8")
+    except Exception as e:
+        return None
 
 
 # ---------------------------
 # STREAMLIT UI
 # ---------------------------
+st.title("AI Resume Generator (LaTeX + Groq + Streamlit)")
 
-st.title("⚡ AI Resume Generator (Streamlit + Groq)")
+st.write("Fill the fields below and generate a clean, AI-powered resume.")
 
-left, right = st.columns([0.45, 0.55])
+summary = st.text_area("Summary")
+education = st.text_area("Education")
+experience = st.text_area("Experience")
+skills = st.text_area("Skills")
+projects = st.text_area("Projects")
 
-with left:
-    st.subheader("✍️ Fill Your Details")
+generate_btn = st.button("Generate Resume")
 
-    summary = st.text_area("Summary", height=120)
-    education = st.text_area("Education", height=120)
-    experience = st.text_area("Experience", height=150)
-    skills = st.text_area("Skills", height=120)
-    projects = st.text_area("Projects", height=150)
 
-    generate_btn = st.button("🚀 Generate AI Resume")
+if generate_btn:
+    with st.spinner("Generating AI LaTeX Resume..."):
+        latex_code = generate_latex(summary, education, experience, skills, projects)
 
-with right:
-    st.subheader("📄 Live CV Preview")
+        st.subheader("Generated LaTeX Code")
+        st.code(latex_code, language="latex")
 
-    if generate_btn:
-        with st.spinner("Generating AI LaTeX Resume..."):
-            latex_code = generate_latex(summary, education, experience, skills, projects)
+        pdf_bytes = latex_to_pdf(latex_code)
 
-            # generate pdf
-            pdf_bytes = latex_to_pdf(latex_code)
-
-            st.success("Resume Generated Successfully!")
-
-            # show PDF
-            display_pdf(pdf_bytes)
-
-            # download
+        if pdf_bytes:
             st.download_button(
-                label="⬇ Download Resume (PDF)",
-                data=pdf_bytes,
+                "Download Resume PDF",
+                pdf_bytes,
                 file_name="resume.pdf",
                 mime="application/pdf"
             )
-
-            # show LaTeX code for advanced users
-            with st.expander("View LaTeX Code"):
-                st.code(latex_code, language="latex")
+        else:
+            st.error("PDF generation failed. Check LaTeX formatting.")
