@@ -67,7 +67,7 @@ Ensure:
 
     with st.spinner("Generating LaTeX using Groq…"):
         response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-specdec",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
@@ -99,4 +99,5 @@ Ensure:
             st.latex(latex_code)
         except Exception:
             st.warning("Preview could not render due to LaTeX complexity, but the .tex file will still compile.")
+
 
