@@ -3,4 +3,6 @@ groq
 jinja2
 requests
 pylatex
+pylatexenc==2.10
+
 
