@@ -1,4 +1,6 @@
 streamlit
 groq
 jinja2
+requests
+pylatex
 
