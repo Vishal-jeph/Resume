@@ -16,7 +16,7 @@ def call_groq(prompt):
     }
 
     data = {
-        "model": "llama3-8b-8192",
+        "model": "llama-3.3-70b-versatile",
         "messages": [
             {"role": "system", "content": "You are a LaTeX resume generator. Output ONLY LaTeX code."},
             {"role": "user", "content": prompt}
@@ -117,3 +117,4 @@ if generate_btn:
             )
         else:
             st.error("PDF generation failed. Check LaTeX formatting.")
+
