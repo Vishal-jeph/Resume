@@ -7,9 +7,11 @@ st.set_page_config(page_title="ATS CV LaTeX Generator", layout="wide")
 # -------------------------------
 # Sidebar: API Key
 # -------------------------------
-with st.sidebar:
-    st.title("⚙️ Settings")
-    groq_api_key = st.text_input("Enter Groq API Key", type="password")
+groq_api_key = st.secrets.get("GROQ_API_KEY")
+
+if not groq_api_key:
+    st.error("❌ Groq API key not found in Streamlit Secrets. Please add GROQ_API_KEY in Settings → Secrets.")
+    st.stop()
 
 # App title
 st.title("📄 ATS LaTeX CV Generator (Streamlit Version)")
@@ -97,3 +99,4 @@ Ensure:
             st.latex(latex_code)
         except Exception:
             st.warning("Preview could not render due to LaTeX complexity, but the .tex file will still compile.")
+
